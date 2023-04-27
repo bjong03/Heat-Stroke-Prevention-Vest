@@ -1,0 +1,414 @@
+#include <Servo.h>
+#include <DHT.h>
+
+// Title: Vest Control 
+// Date: March 11, 2023
+// Purpose: ---tbd----
+
+#define DHTPIN 4     // Digital pin connected to the DHT sensor
+#define DHTTYPE DHT11   // DHT 11
+#define ServoPin 2
+#define ServoPinLB 6
+#define ServoPinLF 8
+#define ServoPinRB 10
+#define ServoPinRF 13
+
+// LIBRARY
+int count = 0;
+int currentfanspeed=0;
+Servo myservo;
+Servo myservo1;
+Servo myservo2;
+Servo myservo3;
+Servo myservo4;
+// PINS
+
+DHT dht(DHTPIN, DHTTYPE); // Initialize DHT sensor
+int lm35_pin = A0;
+int lm35_pin1 = A2;
+
+void setup() {
+  Serial.begin(115200); // Initialize serial communication
+  myservo.attach(2);
+  myservo1.attach(6);
+  myservo2.attach(8);
+  myservo3.attach(10);
+  myservo4.attach(13);
+
+  myservo.write(0);
+  myservo1.write(0);
+  myservo2.write(0);
+  myservo3.write(0);
+  myservo4.write(0);
+  
+  dht.begin(); // Initialize DHT sensor
+
+}
+
+void loop() {
+  
+  float humidity;
+  float stemp;
+  int med = 45;
+  int maxi = 180;
+  float totalscore = calctotal(count);
+
+  if (totalscore < 3) {
+    totalscore = calctotal(count);
+    currentfanspeed = lowFan(currentfanspeed);
+    turnfan1(0);
+    turnfan2(0);
+    turnfan3(0);
+    turnfan4(0);
+    while(totalscore < 3){
+      totalscore = calctotal(count);
+      //count++;
+    Serial.println(currentfanspeed);
+    }
+  }
+  else if(totalscore >= 3 && totalscore < 4.5){
+
+    totalscore = calctotal(count);
+    currentfanspeed = mediumFan(currentfanspeed);
+
+    turnfan1(0);
+    turnfan2(0);
+    turnfan3(0);
+    turnfan4(0);
+    while(totalscore >= 3 && totalscore <4.5){
+      
+      totalscore = calctotal(count);
+      //count++;
+      Serial.println(currentfanspeed);
+                                                                                 
+    }
+  }
+  else if(totalscore >= 4.5 && totalscore <6){
+    totalscore = calctotal(count);
+    currentfanspeed = highFan(currentfanspeed);
+    turnfan1(med);
+    turnfan4(med);
+
+    while(totalscore >= 4.5 && totalscore < 6){
+      Serial.println(currentfanspeed);
+      totalscore = calctotal(count);
+      //count++;
+      
+    }
+  }
+  else if (totalscore >= 6 && totalscore < 8){
+    totalscore = calctotal(count);
+    currentfanspeed = highFan(currentfanspeed);
+    turnfan1(med);
+    turnfan2(med);
+    turnfan3(med);
+    turnfan4(med);
+    while(totalscore >= 6){
+      totalscore = calctotal(count);
+      //count++;
+      Serial.println(currentfanspeed);
+    }
+  }
+    else if (totalscore >=8){
+      totalscore = calctotal(count);
+    currentfanspeed = highFan(currentfanspeed);
+          turnfan1(maxi);
+    turnfan2(maxi);
+    turnfan3(maxi);
+    turnfan4(maxi);
+    while(totalscore >= 8){
+      totalscore = calctotal(count);
+      //count++;
+      Serial.println(currentfanspeed);
+    }
+  }
+}
+
+
+// FUNCTIONS
+
+// read temperature and humidity from DHT 11 sensor
+float ambienttempread() {
+  float temperature = dht.readTemperature(); // Read temperature from DHT sensor
+ 
+  if (isnan(temperature)) { // Check if DHT sensor reading failed
+    Serial.println("Failed to read temp from DHT sensor!");
+  }
+ /* else {
+    Serial.print("Temperature: ");
+    Serial.print(temperature);
+  }*/
+    delay(100); // Wait for 2 seconds before reading from sensor again
+    return temperature;
+}
+
+float ambienthumread() {
+  float humidity = dht.readHumidity(); // Read humidity from DHT sensor
+
+  if (isnan(humidity)) { // Check if DHT sensor reading failed
+    Serial.println("Failed to read hum from DHT sensor!");
+  }
+  /*else {
+    Serial.print(" °C, Humidity: ");
+    Serial.print(humidity);
+    
+  }*/
+
+  delay(100); // Wait for 2 seconds before reading from sensor again
+  return humidity;
+}
+
+float calctotal(int count){
+    float stemp = ambienttempread();
+    float humidity = ambienthumread();
+
+    float heatIndex = calculateHeatIndex(stemp, humidity);
+
+    float heatindex_risk = HeatIndexscore(heatIndex); //heat index score
+    float btemp = bodytemp();;//bodytemp();//btemp();
+
+    float btemp_risk = bodytempscore(btemp); //body temperature score
+    float totalscore = btemp_risk + heatindex_risk;
+    Serial.print("total score = ");
+    Serial.println(totalscore);
+    delay(10);
+    return totalscore;
+}
+// calculates heat index based on temperature, humidity formula
+float calculateHeatIndex(float temperature, float humidity) {
+  temperature = temperature*1.8+32;
+  float heatIndex = -42.379 + 2.04901523 * temperature + 10.14333127 * humidity - 0.22475541 * temperature * humidity - 6.83783e-3 * temperature * temperature - 5.481717e-2 * humidity * humidity + 1.22874e-3 * temperature * temperature * humidity + 8.5282e-4 * temperature * humidity * humidity - 1.99e-6 * temperature * temperature * humidity * humidity;
+  return heatIndex;
+}
+
+// calculates heat index score inputed to algorithm
+float HeatIndexscore(float heatIndex) {
+  float heatIndexScore;
+  if (heatIndex<80) { // Low  
+    heatIndexScore=0;
+  }
+
+  else if (heatIndex >= 80 && heatIndex <= 100) { // Medium 
+    heatIndexScore=(heatIndex-80.0)/72.0;
+  }
+
+  else if (100<heatIndex) { // High
+    heatIndexScore=(2.0*(heatIndex)-180)/72;
+  };
+  heatIndexScore= heatIndexScore*5;
+  Serial.println(heatIndexScore);
+  return heatIndexScore;
+}
+
+// Read the voltage from the LM35 sensor
+  float bodytemp() {
+    /*float sensor_voltage = analogRead(A0);
+    // Convert the voltage to Celsius temperature
+    float temperature_c = sensor_voltage * 5/1024 *100;
+    // Print the temperature to the serial monitor
+    Serial.print("Temperature: ");
+    Serial.print(temperature_c);
+    Serial.println(" C");*/
+    int reading = analogRead(A0);
+    int reading1 = analogRead(A2);
+
+  // Convert that reading into voltage
+  float voltage = reading * (5.0 / 1024.0);
+  float voltage1 = reading1 * (5.0 / 1024.0);
+
+  // Convert the voltage into the temperature in Celsius
+  float temperatureC = (voltage+voltage1)/2 * 100;
+
+  // Print the temperature in Celsius
+  /*Serial.print("Temperature: ");
+  Serial.print(temperatureC);
+  Serial.print("\xC2\xB0"); // shows degree symbol
+  Serial.print("C  |  ");*/
+    return temperatureC;
+  }
+  float btemp () {
+    int sensor_voltage = analogRead(A1);
+    // Convert the voltage to Celsius temperature
+    float temperature_c = sensor_voltage * 0.00488;
+    // Print the temperature to the serial monitor
+
+    Serial.print(temperature_c);
+
+    return temperature_c;
+  }
+
+// Calculates body temperature score inputed to algorithm
+  float bodytempscore(float temperature_c) {
+  if (temperature_c>=35 && temperature_c<=36.7) {   
+    double tempscore=0;
+    return tempscore;
+  }
+  else if (temperature_c > 36.7){
+    double tempscore=(temperature_c-36.7)/1.3*6;
+    return tempscore;
+  }
+  else {
+    Serial.print("Body temperature critically low");
+    return 0;
+  }
+  }
+
+int fanstatuscounter (int count) {
+  if (count%4==0){
+    return 0;
+  }
+  else if (count%4==1){
+    return 1;
+  }
+  else if (count%4==2){
+    return 2;
+  }
+  else if (count%4==3){
+    return 3;
+  }
+}
+ int fantarget (int goal){
+   int count=0;
+   while (goal!=fanstatuscounter(count)){
+     //buttonpress;
+     count++;
+   }
+ }
+// FAN SPEEDS 
+
+// low fan speed
+int lowFan(int currentfanspeed) {
+  
+  int var1;
+  if(currentfanspeed == 1){
+    var1 = 2;
+  }
+  else if(currentfanspeed == 2){
+    var1 = 1;
+  }
+  else if(currentfanspeed == 3){
+    var1 = 0;
+  }
+  else if (currentfanspeed == 0){
+    var1 = 3;
+  }
+  
+  for(int i = 0; i < var1; i++){
+    turnfan();
+  } 
+  
+
+  currentfanspeed = 3;
+   Serial.println("low");
+  return currentfanspeed;
+}
+
+// medium fan speed 
+int mediumFan(int currentfanspeed) {
+  
+  int var2;
+  if(currentfanspeed == 1){
+    var2 = 1;
+  }
+  else if(currentfanspeed == 2){
+    var2 = 0;
+  }
+  else if(currentfanspeed == 3){
+    var2 = 3;
+  }
+  else if (currentfanspeed == 0){
+    var2 = 2;
+  }
+  for(int i = 0; i < var2; i++){
+    turnfan();
+  }
+  
+  currentfanspeed = 2;
+   Serial.println("medium");
+  return currentfanspeed;
+}
+
+// high fan speed
+int highFan(int currentfanspeed) {
+
+  int var3;
+  
+  if(currentfanspeed == 1){
+    var3 = 0;
+  }
+  else if(currentfanspeed == 2){
+    var3 = 3;
+  }
+  else if(currentfanspeed == 3){
+    var3 = 2;
+  }
+  else if (currentfanspeed == 0){
+    var3 = 1;
+  }
+  
+  for(int i = 0; i < var3; i++){
+    turnfan();
+  }
+
+  
+
+  currentfanspeed = 1;
+  
+  Serial.println("high");
+  return currentfanspeed;
+}
+
+void turnfan() {
+  for (int pos = 130; pos <= 175; pos += 1) { // goes from 0 degrees to 180 degrees
+    // in steps of 1 degree
+    myservo.write(pos);              // tell servo to go to position in variable 'pos'
+    delay(10);                       // waits 15 ms for the servo to reach the position
+  }
+  for (int pos = 175; pos >= 130; pos -= 1) { // goes from 180 degrees to 0 degrees
+    myservo.write(pos);              // tell servo to go to position in variable 'pos'
+    delay(10);                       // waits 15 ms for the servo to reach the position
+  }
+  Serial.println("i turned!");
+  return;
+}
+void turnfan1(int deg) {
+    for (int pos = 90; pos <=  deg; pos += 1) { 
+    // in steps of 1 degree
+    myservo1.write(pos);              
+    delay(5);                       
+    }
+
+}
+void turnfan2(int deg) {
+    for (int pos = 0; pos <=  deg; pos += 1) { 
+    // in steps of 1 degree
+    myservo2.write(pos);              
+    delay(5);                       
+    }
+}
+void turnfan3(int deg) {
+   for (int pos = 0; pos <=  deg; pos += 1) { 
+    // in steps of 1 degree
+    myservo3.write(pos);              
+    delay(5);                       
+   }
+
+}
+void turnfan4(int deg) {
+    for (int pos = 0; pos <=  deg; pos += 1) { 
+    // in steps of 1 degree
+    myservo4.write(pos);              
+    delay(5);                       
+    }
+
+}
+// open valve - water dripping 
+
+
+
+
+// emergency activation
+void emergencyActivation(){
+  // fan high power
+  // fully open valve
+}
